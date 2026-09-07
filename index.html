@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Exhibitor Map Export</title>
+        <style>
+        .error {
+        color: red;
+        }
+        </style>
+    </head>
+    <body>
+        <h1>Exhibitor Map Export</h1>
+        <p>Copy & paste the the data from the exhibitor map page on the participants website to the relevant text areas below.</p>
+        <div style="display: flex;">
+            <div id="booths-container">
+                <h2>Booths</h2>
+                <p id="booths-error" class="error">Data not pasted</p>
+                <textarea id="booths-area" rows="10" cols="60"></textarea>
+            </div>
+            <div id="vendors-container">
+                <h2>All Vendors</h2>
+                <p id="vendors-error" class="error">Data not pasted</p>
+                <textarea id="vendors-area" rows="10" cols="60"></textarea>
+            </div>
+        </div>
+        <div>
+            <h2>Exhibitor Map Spreadsheet</h2>
+            <button id="download-btn">Download Spreadsheet</button>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Vendor Name</th>
+                        <th>Area</th>
+                        <th>Booth Number</th>
+                    </tr>
+                </thead>
+                <tbody id="exhibitor-spreadsheet"></tbody>
+            </table>
+        </div>
+    </body>
+    <script>
+
+    function evalJs(js) {
+        let fn = new Function("return (" + js + ")");
+        return fn();
+    }
+
+    function parseData(textAreaId) {
+        const textarea = document.getElementById(textAreaId);
+        const json = textarea.value;
+
+        let data = null;
+        try {
+            data = eval(json) || "";
+        } catch {
+            return null;
+        }
+        return data;
+    }
+    
+    function validateBoothData(boothData) {
+        const boothsError = document.getElementById("booths-error");
+        boothsError.innerHTML = "";
+
+        if (boothData === "") {
+            boothsError.innerHTML = "Data not pasted";
+            return null;
+        } else if (boothData === null) {
+            boothsError.innerHTML = "Data is invalid, make sure everything was copied";
+            return null;
+        } else if (!Array.isArray(boothData)) {
+            boothsError.innerHTML = "Data is invalid, make sure everything was copied";
+            return null;
+        }
+
+        if (boothData.length > 0) {
+            for (let i = 0; i < boothData.length; i ++) {
+                if (!boothData[i]["areaId"] || !boothData[i]["areaId"]["name"]) {
+                    // boothsError.innerHTML = "Missing area.";
+                    console.log(boothData[i]);
+                    // return null;
+                }
+                if ((typeof (boothData[i]["boothNumber"])) !== "number") {
+                    boothsError.innerHTML = "Missing boothNumber.";
+                    console.log(boothData[i]["boothNumber"]);
+                    return null;
+                }
+
+            }
+        }
+        return boothData;
+    }
+
+    function validateVendorData(vendorData) {
+        const vendorsError = document.getElementById("vendors-error");
+        vendorsError.innerHTML = "";
+
+        if (vendorData === "") {
+            vendorsError.innerHTML = "Data not pasted";
+            return null;
+        } else if (vendorData === null) {
+            vendorsError.innerHTML = "Data is invalid, make sure everything was copied";
+            return null;
+        } else if (!Array.isArray(vendorData)) {
+            vendorsError.innerHTML = "Data is invalid, make sure everything was copied";
+            return null;
+        }
+
+        if (vendorData.length > 0) {
+            for (let i = 0; i < vendorData.length; i ++) {
+                if (!vendorData[i]["organizationName"]) {
+                    vendorsError.innerHTML = "Missing organizationName.";
+                    return null;
+                }
+                if (!Array.isArray(vendorData[i]["assignedBoothIds"])) {
+                    vendorsError.innerHTML = "Missing organizationName.";
+                    return null;
+                }
+
+            }
+        }
+
+        return vendorData;
+    }
+
+    function generateData() {
+        const boothsAreaId = "booths-area";
+        const vendorsAreaId = "vendors-area";
+        const boothData = validateBoothData(parseData(boothsAreaId));
+        const vendorData = validateVendorData(parseData(vendorsAreaId));
+
+        if (boothData === null || vendorData === null) {
+            return null;
+        }
+
+        const boothDict = {};
+        for (let i = 0; i < boothData.length; i ++) {
+            boothDict[boothData[i]["_id"]] = boothData[i];
+        }
+
+        const data = [];
+        for (let i = 0; i < vendorData.length; i ++) {
+            const vendorName = vendorData[i].organizationName;
+            const boothIds = vendorData[i].assignedBoothIds;
+            if (boothIds.length === 0) {
+                data.push({vendorName: vendorName})
+            }
+            for (let j = 0; j < boothIds.length; j ++) {
+                if (boothDict[boothIds[j]] === undefined) {
+                    console.log(boothIds[j]);
+                    continue;
+                }
+                data.push({
+                    vendorName: vendorName,
+                    area: boothDict[boothIds[j]]?.areaId?.name || "NOT SET",
+                    boothNumber: boothDict[boothIds[j]].boothNumber
+                });
+            }
+        }
+
+        data.sort((a,b) => {
+            if (!a.area && !!b.area) { return -1;}
+            if (!!a.area && !b.area) { return 1;}
+            if (!a.area) return 0;
+            if (a.area === b.area) {
+                return a.boothNumber - b.boothNumber;
+            }
+            return a.area.localeCompare(b.area);
+            // return a.vendorName.localeCompare(b.vendorName);
+        });
+
+        return data;
+    }
+
+    function createSpreadsheet() {
+        const data = generateData();
+
+        if (data === null) {
+            return;
+        }
+
+        const spreadsheet = document.getElementById("exhibitor-spreadsheet");
+        spreadsheet.innerHTML = "";
+
+        for (let i = 0; i < data.length; i ++) {
+            const rowEl = document.createElement("tr");
+            const nameCell = document.createElement("td");
+            const areaCell = document.createElement("td");
+            const boothNumCell = document.createElement("td");
+
+            nameCell.innerText = data[i].vendorName;
+            if (!!data[i].area) {
+                areaCell.innerText = data[i].area;
+            } else {
+                areaCell.innerText = "UNASSIGNED";
+            }
+            if (!!data[i].boothNumber) {
+                boothNumCell.innerText = data[i].boothNumber;
+            } else {
+                boothNumCell.innerText = "UNASSIGNED";
+            }
+
+            rowEl.append(nameCell);
+            rowEl.append(areaCell);
+            rowEl.append(boothNumCell);
+            spreadsheet.append(rowEl);
+        }
+    }
+
+    function downloadSpreadsheet() {
+        const data = generateData();
+        let csvData = "Vendor Name,Area,Booth Number\n";
+        for (let i = 0; i < data.length; i ++) {
+            let line = "";
+            line += '"' + data[i].vendorName + '"';
+            line += ',';
+            if (!!data[i].area) {
+                line += data[i].area;
+            } else {
+                line += "UNASSIGNED";
+            }
+            line += ',';
+            if (!!data[i].boothNumber) {
+                line += data[i].boothNumber;
+            } else {
+                line += "UNASSIGNED";
+            }
+            csvData += line + '\n';
+        }
+        const blob = new Blob([csvData], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();       a.download = 'data.csv';
+    }
+
+    document.getElementById("booths-area").oninput = createSpreadsheet;
+    document.getElementById("vendors-area").oninput = createSpreadsheet;
+    document.getElementById("download-btn").onclick = downloadSpreadsheet;
+    </script>
+</html>
